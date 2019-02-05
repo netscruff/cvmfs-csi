@@ -2,6 +2,7 @@ kind: DaemonSet
 apiVersion: apps/v1beta2
 metadata:
   name: csi-cvmfsplugin
+  namespace: cvmfs
 spec:
   selector:
     matchLabels:
@@ -11,31 +12,30 @@ spec:
       labels:
         app: csi-cvmfsplugin
     spec:
-      serviceAccount: csi-nodeplugin
+      serviceAccount: cvmfs-nodeplugin
       hostNetwork: true
       containers:
-        - name: driver-registrar
-          image: quay.io/k8scsi/driver-registrar:v0.3.0
+        - name: csi-driver-registrar
+          image: quay.io/k8scsi/csi-node-driver-registrar:v1.0.2
           args:
-            - "--v=5"
-            - "--csi-address=$(ADDRESS)"
-          env:
-            - name: ADDRESS
-              value: /var/lib/kubelet/plugins/csi-cvmfsplugin/csi.sock
-            - name: KUBE_NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
+            - "--csi-address=/csi/csi.sock"
+            - "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-cvmfsplugin/csi.sock"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "rm -rf /registration/csi-cvmfsplugin /registration/csi-cvmfsplugin-reg.sock"]
           volumeMounts:
-            - name: socket-dir
-              mountPath: /var/lib/kubelet/plugins/csi-cvmfsplugin
+            - name: plugin-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
         - name: csi-cvmfsplugin
           securityContext:
             privileged: true
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: csi-cvmfsplugin:v0.3.0
+          image: gitlab-registry.nautilus.optiputer.net/prp/cvmfs-csi:latest
           args :
             - "--nodeid=$(NODE_ID)"
             - "--endpoint=$(CSI_ENDPOINT)"
@@ -48,7 +48,7 @@ spec:
                   fieldPath: spec.nodeName
             - name: CSI_ENDPOINT
               value: unix://var/lib/kubelet/plugins/csi-cvmfsplugin/csi.sock
-          imagePullPolicy: "IfNotPresent"
+          imagePullPolicy: "Always"
           volumeMounts:
             - name: plugin-dir
               mountPath: /var/lib/kubelet/plugins/csi-cvmfsplugin
@@ -62,19 +62,22 @@ spec:
               readOnly: true
             - name: host-dev
               mountPath: /dev
+            - name: cvmfs-config
+              mountPath: /etc/cvmfs/default.local
+              subPath: cvmfs-override
       volumes:
         - name: plugin-dir
           hostPath:
             path: /var/lib/kubelet/plugins/csi-cvmfsplugin
             type: DirectoryOrCreate
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: DirectoryOrCreate
         - name: pods-mount-dir
           hostPath:
             path: /var/lib/kubelet/pods
             type: Directory
-        - name: socket-dir
-          hostPath:
-            path: /var/lib/kubelet/plugins/csi-cvmfsplugin
-            type: DirectoryOrCreate
         - name: host-sys
           hostPath:
             path: /sys
@@ -84,3 +87,6 @@ spec:
         - name: host-dev
           hostPath:
             path: /dev
+        - name: cvmfs-config
+          configMap:
+            name: config
