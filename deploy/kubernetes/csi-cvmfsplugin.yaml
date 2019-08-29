@@ -91,7 +91,7 @@ spec:
               mountPath: /tmp/csi/keys
             - name: cvmfs-config
               mountPath: /etc/cvmfs/default.local
-              subPath: cvmfs-override
+              subPath: default.local
       volumes:
         - name: mount-cache-dir
           emptyDir: {}
